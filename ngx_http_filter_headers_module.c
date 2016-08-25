@@ -223,14 +223,43 @@ ngx_http_filter_headers_filter(ngx_http_request_t *r)
 {
 	ngx_http_filter_headers_loc_conf_t	*conf;
 	ngx_str_t				*header_name;
-	ngx_uint_t				i;
+	ngx_uint_t				i, j, found;
+	ngx_list_part_t				*part;
+	ngx_table_elt_t				*header;
 
 	conf = ngx_http_get_module_loc_conf(r, ngx_http_filter_headers_module);
 
-	if (conf->output_headers) {
-		header_name = conf->output_headers->elts;
-		for (i = 0; i < conf->output_headers->nelts; i++) {
-			ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "XXXX %V XXXX", &header_name[i]);
+	part = &r->headers_out.headers.part;
+	header = part->elts;
+
+	for (i = 0; /* void */; i++) {
+		if (i >= part->nelts) {
+			if (part->next == NULL) {
+				break;
+			}
+			part = part->next;
+			header = part->elts;
+			i = 0;
+		}
+		if (header[i].hash == 0) {
+			continue;
+		}
+		/* Check if header is in accepted output headers */
+		if (conf->output_headers) {
+			header_name = conf->output_headers->elts;
+			found = 0;
+			for (j = 0; j < conf->output_headers->nelts; j++) {
+				if (header[i].key.len == header_name[j].len && ngx_strncasecmp(header[i].key.data, header_name[j].data, header[i].key.len) == 0) {
+					/* Found header */
+					found = 1;
+					break;
+				}
+			}
+			if (!found) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Clearing output header %V", &header[i].key);
+				header[i].hash = 0;
+				header[i].value.len = 0;
+			}
 		}
 	}
 
