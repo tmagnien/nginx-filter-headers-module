@@ -37,8 +37,11 @@ Directives
 filter_headers_output_whitelist
 -------------------------------
 **syntax:** *filter_headers_output_whitelist &lt;header&gt; ... &lt;header&gt;*
+
 **default:** *no*
+
 **context:** *http, server, location, location if*
+
 **phase:** *output-header-filter*
 
 Clears any header not in given list from response to client.
