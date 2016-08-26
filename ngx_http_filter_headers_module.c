@@ -9,23 +9,23 @@
  * ngx_http_filter_headers_main_conf_t
  */
 typedef struct {
-	ngx_int_t	postponed_to_phase_end;
 	ngx_int_t	requires_filter;
-	ngx_int_t	requires_handler;
+	/*ngx_int_t	postponed_to_phase_end;
+	ngx_int_t	requires_handler;*/
 } ngx_http_filter_headers_main_conf_t;
 
 /*
  * ngx_http_filter_headers_loc_conf_t
  */
 typedef struct {
-	ngx_array_t	*input_headers;
+	/*ngx_array_t	*input_headers;*/
 	ngx_array_t	*output_headers;
 } ngx_http_filter_headers_loc_conf_t;
 
 static void* ngx_http_filter_headers_create_main_conf(ngx_conf_t *cf);
 static void* ngx_http_filter_headers_create_loc_conf(ngx_conf_t *cf);
 static ngx_int_t ngx_http_filter_headers_filter(ngx_http_request_t *r);
-static ngx_int_t ngx_http_filter_headers_handler(ngx_http_request_t *r);
+/*static ngx_int_t ngx_http_filter_headers_handler(ngx_http_request_t *r);*/
 
 static ngx_int_t ngx_http_filter_headers_post_config(ngx_conf_t *cf);
 
@@ -35,13 +35,13 @@ static char* ngx_http_filter_headers_config_headers(ngx_conf_t *cf, ngx_command_
  * Module commands
  */
 static ngx_command_t ngx_http_filter_headers_commands[] = {
-	{ ngx_string("filter_headers_input"),
+	/*{ ngx_string("filter_headers_input_whitelist"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_1MORE,
 	  ngx_http_filter_headers_config_headers,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  offsetof(ngx_http_filter_headers_loc_conf_t, input_headers),
-	  NULL },
-	{ ngx_string("filter_headers_output"),
+	  NULL },*/
+	{ ngx_string("filter_headers_output_whitelist"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_1MORE,
 	  ngx_http_filter_headers_config_headers,
 	  NGX_HTTP_LOC_CONF_OFFSET,
@@ -98,8 +98,8 @@ ngx_http_filter_headers_post_config(ngx_conf_t *cf)
 {
 	int					multi_http_blocks;
 	ngx_http_filter_headers_main_conf_t	*fhmcf;
-	ngx_http_handler_pt			*h;
-	ngx_http_core_main_conf_t		*cmcf;
+	/*ngx_http_handler_pt			*h;
+	ngx_http_core_main_conf_t		*cmcf;*/
 
 	fhmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_filter_headers_module);
 
@@ -115,14 +115,14 @@ ngx_http_filter_headers_post_config(ngx_conf_t *cf)
 		ngx_http_top_header_filter = ngx_http_filter_headers_filter;
 	}
 
-	if (fhmcf->requires_handler) {
+	/*if (fhmcf->requires_handler) {
 		cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 		h = ngx_array_push(&cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers);
 		if (h == NULL) {
 			return NGX_ERROR;
 		}
 		*h = ngx_http_filter_headers_handler;
-	}
+	}*/
 
 	return NGX_OK;
 }
@@ -172,12 +172,12 @@ ngx_http_filter_headers_config_headers(ngx_conf_t *cf, ngx_command_t *cmd, void 
 
 	arg = cf->args->elts;
 
-	if (ngx_strcmp(arg[0].data, "filter_headers_input") == 0) {
-		headers = &fhlcf->input_headers;
-	}
-	else if (ngx_strcmp(arg[0].data, "filter_headers_output") == 0) {
+	if (ngx_strcmp(arg[0].data, "filter_headers_output_whitelist") == 0) {
 		headers = &fhlcf->output_headers;
 	}
+	/*else if (ngx_strcmp(arg[0].data, "filter_headers_input_whitelist") == 0) {
+		headers = &fhlcf->input_headers;
+	}*/
 	else {
 		/* Why the hell did we get here ??? */
 		ngx_log_error(NGX_LOG_ERR, cf->log, 0, "Got unknown directive %V in ngx_http_filter_headers_config_headers", &arg[0]);
@@ -208,12 +208,12 @@ ngx_http_filter_headers_config_headers(ngx_conf_t *cf, ngx_command_t *cmd, void 
 	}
 
 	fhmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_filter_headers_module);
-	if (fhlcf->input_headers && fhlcf->input_headers->nelts > 0) {
-		fhmcf->requires_handler = 1;
-	}
-	else if (fhlcf->output_headers && fhlcf->output_headers->nelts > 0) {
+	if (fhlcf->output_headers && fhlcf->output_headers->nelts > 0) {
 		fhmcf->requires_filter = 1;
 	}
+	/*else if (fhlcf->input_headers && fhlcf->input_headers->nelts > 0) {
+		fhmcf->requires_handler = 1;
+	}*/
 
 	return NGX_CONF_OK;
 }
@@ -266,8 +266,8 @@ ngx_http_filter_headers_filter(ngx_http_request_t *r)
 	return ngx_http_next_header_filter(r);
 }
 
-static ngx_int_t
+/*static ngx_int_t
 ngx_http_filter_headers_handler(ngx_http_request_t *r)
 {
 	return NGX_DECLINED;
-}
+}*/
