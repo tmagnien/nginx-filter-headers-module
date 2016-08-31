@@ -19,7 +19,7 @@ typedef struct {
  */
 typedef struct {
 	/*ngx_array_t	*input_headers;*/
-	ngx_array_t	*output_headers;
+	ngx_hash_t	*output_headers_hash;
 } ngx_http_filter_headers_loc_conf_t;
 
 static void* ngx_http_filter_headers_create_main_conf(ngx_conf_t *cf);
@@ -45,7 +45,7 @@ static ngx_command_t ngx_http_filter_headers_commands[] = {
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_1MORE,
 	  ngx_http_filter_headers_config_headers,
 	  NGX_HTTP_LOC_CONF_OFFSET,
-	  offsetof(ngx_http_filter_headers_loc_conf_t, output_headers),
+	  offsetof(ngx_http_filter_headers_loc_conf_t, output_headers_hash),
 	  NULL },
 	ngx_null_command
 };
@@ -165,15 +165,19 @@ ngx_http_filter_headers_config_headers(ngx_conf_t *cf, ngx_command_t *cmd, void 
 {
 	ngx_http_filter_headers_main_conf_t	*fhmcf;
 	ngx_uint_t				i;
-	ngx_array_t				**headers;
-	ngx_str_t				*arg, *header_name;
+	ngx_hash_t				**headers_hash;
+	ngx_array_t				*headers;
+	ngx_str_t				*arg;
+	ngx_hash_init_t				hash;
+	ngx_hash_key_t				*hk;
+	ngx_int_t				rc;
 
 	ngx_http_filter_headers_loc_conf_t	*fhlcf = conf;
 
 	arg = cf->args->elts;
 
 	if (ngx_strcmp(arg[0].data, "filter_headers_output_whitelist") == 0) {
-		headers = &fhlcf->output_headers;
+		headers_hash = &fhlcf->output_headers_hash;
 	}
 	/*else if (ngx_strcmp(arg[0].data, "filter_headers_input_whitelist") == 0) {
 		headers = &fhlcf->input_headers;
@@ -185,35 +189,62 @@ ngx_http_filter_headers_config_headers(ngx_conf_t *cf, ngx_command_t *cmd, void 
 
 	}
 
-	if (*headers == NULL) {
-		*headers = ngx_array_create(cf->pool, 1, sizeof(ngx_str_t));
-		if (*headers == NULL) {
+	if (*headers_hash == NULL) {
+		*headers_hash = ngx_pcalloc(cf->pool, sizeof(ngx_hash_t));
+		if (*headers_hash == NULL) {
 			return NGX_CONF_ERROR;
 		}
+	}
+
+	headers = ngx_array_create(cf->pool, 1, sizeof(ngx_hash_key_t));
+	if (headers == NULL) {
+		return NGX_CONF_ERROR;
 	}
 
 	for (i = 1; i < cf->args->nelts; i++) {
 		if (arg[i].len == 0) {
 			continue;
 		}
-		header_name = ngx_array_push(*headers);
-		header_name->len = arg[i].len;
-		header_name->data = ngx_pcalloc(cf->pool, header_name->len);
-		ngx_memcpy(header_name->data, arg[i].data, arg[i].len);
+		hk = ngx_array_push(headers);
+		if (hk == NULL) {
+			return NGX_CONF_ERROR;
+		}
+		hk->key.data = ngx_pcalloc(cf->pool, arg[i].len);
+		hk->key.len = arg[i].len;
+		ngx_memcpy(hk->key.data, arg[i].data, arg[i].len);
+		hk->key_hash = ngx_hash_key_lc(arg[i].data, arg[i].len);
+		hk->value = (void *) 1;
 	}
 
-	if ((*headers)->nelts == 0) {
-		ngx_pfree(cf->pool, *headers);
-		*headers = NULL;
+	if (headers->nelts == 0) {
+		ngx_pfree(cf->pool, headers);
+		ngx_pfree(cf->pool, headers_hash);
+		headers = NULL;
+		headers_hash = NULL;
 	}
 
-	fhmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_filter_headers_module);
-	if (fhlcf->output_headers && fhlcf->output_headers->nelts > 0) {
-		fhmcf->requires_filter = 1;
-	}
 	/*else if (fhlcf->input_headers && fhlcf->input_headers->nelts > 0) {
 		fhmcf->requires_handler = 1;
 	}*/
+
+	hash.max_size = 512;
+	hash.bucket_size = 64;
+	hash.name = "filter_headers_hash";
+	hash.hash = *headers_hash;
+	hash.key = ngx_hash_key_lc;
+	hash.pool = cf->pool;
+	hash.temp_pool = NULL;
+
+	rc = ngx_hash_init(&hash, headers->elts, headers->nelts);
+
+	if (rc != NGX_OK) {
+		return NGX_CONF_ERROR;
+	}
+
+	fhmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_filter_headers_module);
+	if (fhlcf->output_headers_hash && (fhlcf->output_headers_hash->size > 0)) {
+		fhmcf->requires_filter = 1;
+	}
 
 	return NGX_CONF_OK;
 }
@@ -222,8 +253,7 @@ static ngx_int_t
 ngx_http_filter_headers_filter(ngx_http_request_t *r)
 {
 	ngx_http_filter_headers_loc_conf_t	*conf;
-	ngx_str_t				*header_name;
-	ngx_uint_t				i, j, found;
+	ngx_uint_t				i;
 	ngx_list_part_t				*part;
 	ngx_table_elt_t				*header;
 
@@ -245,17 +275,8 @@ ngx_http_filter_headers_filter(ngx_http_request_t *r)
 			continue;
 		}
 		/* Check if header is in accepted output headers */
-		if (conf->output_headers) {
-			header_name = conf->output_headers->elts;
-			found = 0;
-			for (j = 0; j < conf->output_headers->nelts; j++) {
-				if (header[i].key.len == header_name[j].len && ngx_strncasecmp(header[i].key.data, header_name[j].data, header[i].key.len) == 0) {
-					/* Found header */
-					found = 1;
-					break;
-				}
-			}
-			if (!found) {
+		if (conf->output_headers_hash && (conf->output_headers_hash->size > 0)) {
+			if (!ngx_hash_find(conf->output_headers_hash, header[i].hash, header[i].lowcase_key, header[i].key.len)) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Clearing output header %V", &header[i].key);
 				header[i].hash = 0;
 				header[i].value.len = 0;
